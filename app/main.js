@@ -62,7 +62,32 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500);
       res.end('Internal Server Error');
     }
-  } else {
+  }
+  // Handle GET /files/{filename}
+  else if (method === 'GET' && pathname.startsWith('/files/')) {
+    const filename = pathname.slice('/files/'.length);
+    
+    try {
+      const filePath = path.join(targetDirectory, filename);
+      const fileContent = await fs.readFile(filePath);
+      
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': fileContent.length
+      });
+      res.end(fileContent);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        res.writeHead(404);
+        res.end('File not found');
+      } else {
+        console.error(err);
+        res.writeHead(500);
+        res.end('Internal Server Error');
+      }
+    }
+  }
+  else {
     res.writeHead(404);
     res.end('Not Found');
   }
