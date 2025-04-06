@@ -111,3 +111,4 @@ function getRequestBody(socket, data){
 function writeSocketMessage (socket, message){
     socket.write(message);
     socket.end();
+}
