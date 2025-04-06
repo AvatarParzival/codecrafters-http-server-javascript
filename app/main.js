@@ -41,7 +41,7 @@ const server = net.createServer({ keepAlive: true }, (socket) => {
       const filePath = FILES_DIR + fileName;
       const file = data.toString("utf-8").split("\r\n\r\n")[1];
       fs.writeFileSync(filePath, file);
-      socket.write("HTTP/1.1 201 CREATED\r\n\r\n");
+      socket.write("HTTP/1.1 201 Created\r\n\r\n");
     } else if (path.includes("/files/")) {
       let fileName = path.split("/")[2];
       console.log("FILENAME: " + fileName);
