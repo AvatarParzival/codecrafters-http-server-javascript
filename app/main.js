@@ -1,16 +1,50 @@
-const net = require("net");
-// You can use print statements as follows for debugging, they'll be visible when running tests.
-console.log("Logs from your program will appear here!");
-// Uncomment this to pass the first stage
-const server = net.createServer((socket) => {
-  socket.on("close", () => {
+import { createServer } from 'node:net';
+const createResponse = ({ status, headers, body }) => {
+  return [
+    `HTTP/1.1 ${status}`,
+    ...Object.entries(headers ?? {}).map(([key, value]) => `${key}: ${value}`),
+    '',
+    body ?? '',
+  ].join('\r\n');
+};
+const server = createServer((socket) => {
+  socket.on('data', (data) => {
+    let response = '';
+    try {
+      const [startLine, ..._headersAndBody] = data.toString().split('\r\n');
+      const [_method, path, _version] = startLine.split(' ');
+      if (path === '/') {
+        response = createResponse({
+          status: '200 OK',
+        });
+      } else if (path.startsWith('/echo')) {
+        const randomString = path.split('echo/')[1];
+        response = createResponse({
+          status: '200 OK',
+          headers: {
+            'Content-Type': 'text/plain',
+            'Content-Length': randomString.length,
+          },
+          body: randomString,
+        });
+      } else {
+        response = createResponse({
+          status: '404 Not Found',
+        });
+      }
+    } catch (error) {
+      response = createResponse({
+        status: '500 Internal Server Error',
+      });
+    }
+    socket.write(response);
+    socket.end();
+  });
+  socket.on('close', () => {
     socket.end();
     server.close();
   });
-  socket.on("data", (data) => {
-    const path = data.toString().split(" ")[1];
-    const responseStatus = path === '/' ? "200 OK" : "404 Not Found";
-    socket.write(`HTTP/1.1 ${responseStatus}\r\n\r\n`);
-  })
 });
-server.listen(4221, "localhost");
+server.listen(4221, 'localhost', () => {
+  console.log('Server started at http://localhost:4221');
+});
