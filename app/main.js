@@ -36,7 +36,7 @@ function handleData(socket, data) {
             socket.end();
         }
         else{
-            response = HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${content_length}\r\n\r\n${bodyContent};
+            response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${content_length}\r\n\r\n${bodyContent};
             writeSocketMessage(socket, response);
         }
     }
@@ -45,7 +45,7 @@ function handleData(socket, data) {
         const headerContent = parseHeaders(socket, data);
         const userAgent = headerContent['userAgent'];
         const userAgent_length = userAgent.length.toString();
-        const response = HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgent_length}\r\n\r\n${userAgent};
+        const response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgent_length}\r\n\r\n${userAgent};
         writeSocketMessage(socket,response);
     }
     else if(currentPath.startsWith('/files') && currentMethod === 'GET'){
@@ -55,7 +55,7 @@ function handleData(socket, data) {
         if(fs.existsSync(file)){
             const content = fs.readFileSync(file).toString();
             const length = content.length;
-            const response = HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${length}\r\n\r\n${content}\r\n;
+            const response = `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${length}\r\n\r\n${content}\r\n;
             writeSocketMessage(socket, response);
         }else {
             writeSocketMessage(socket, HTTP_NOT_FOUND);
