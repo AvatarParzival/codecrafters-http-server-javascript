@@ -1,97 +1,80 @@
-const net = require("net");
-const fs = require("fs");
-const directory = process.argv.reduce((state, arg) => {
-  switch (state) {
-    case undefined:
-      return arg == "--directory" ? arg : state;
-    case "--directory":
-      return arg;
-    default:
-      return state;
-  }
-}, undefined);
-if (directory) {
-  console.log("files directory set to ", directory);
-}
+const net = require('net');
+const fs = require('fs');
+// You can use print statements as follows for debugging, they'll be visible when running tests.
+console.log('Logs from your program will appear here!');
 const server = net.createServer((socket) => {
-  socket.on("data", (data) => {
-    const request = data.toString();
-    const [head, body] = request.split("\r\n\r\n");
-    const [requestLine, ...headerLines] = head.split("\r\n");
-    const [method, url] = requestLine.split(" ");
-    const segments = url.split("/").slice(1);
-    const headers =
-      Object.fromEntries(
-        headerLines.map((headerLine) => headerLine.split(": ", 2)) || [],
-      ) || {};
-    switch (segments[0]) {
-      case "":
-        socket.write(httpResponse("200 OK"));
-        break;
-      case "files":
-        switch (method) {
-          case "GET":
-            const file = findFile(segments[1]);
-            file
-              ? socket.write(fileResponse(file))
-              : socket.write(httpResponse("404 Not Found"));
-            break;
-          case "POST":
-            writeFile(segments[1], body);
-            socket.write(httpResponse("201 Created"));
-            break;
+  socket.on('data', (data) => {
+    const arguments = process.argv.slice(2);
+    const dirPath = arguments[1];
+    const [requestHeader, requestBody] = data.toString().split('\r\n\r\n');
+    const [requestLine, host, userAgent, accept] = requestHeader.split('\r\n');
+    const [method, targetPath, httpVersion] = requestLine.split(' ');
+    const crlf = '\r\n';
+    const statusLineOk = 'HTTP/1.1 200 OK' + crlf;
+    if (targetPath === '/') {
+      socket.write(statusLineOk + crlf);
+    } else if (targetPath.includes('/echo')) {
+      const contentBody = targetPath.split('/')[2];
+      socket.write(statusLineOk);
+      const splitted = requestHeader.split('\r\n');
+      const headerGzip = splitted.find((header) => {
+        return header.includes('gzip');
+      });
+      if (headerGzip) {
+        socket.write('Content-Encoding: gzip' + crlf);
+      }
+      socket.write('Content-Type: text/plain' + crlf);
+      socket.write(`Content-Length: ${contentBody.length}` + crlf);
+      socket.write(crlf);
+      socket.write(contentBody);
+    } else if (targetPath === '/user-agent') {
+      const contentBody = userAgent.split(': ')[1];
+      socket.write(statusLineOk);
+      socket.write('Content-Type: text/plain' + crlf);
+      socket.write(`Content-Length: ${contentBody.length}` + crlf);
+      socket.write(crlf);
+      socket.write(contentBody);
+    } else if (targetPath.includes('/files')) {
+      const filename = targetPath.split('/')[2];
+      const filepath = dirPath + filename;
+      console.log('filepath');
+      console.log(filepath);
+      if (method === 'GET') {
+        if (!fs.existsSync(filepath)) {
+          socket.write('HTTP/1.1 404 Not Found' + crlf + crlf);
+          socket.end();
+        } else {
+          const data = fs.readFileSync(filepath, { encoding: 'UTF-8' });
+          try {
+            socket.write('HTTP/1.1 200 OK' + crlf);
+            socket.write(`Content-Length: ${data.length}` + crlf);
+            socket.write('Content-Type: application/octet-stream' + crlf);
+            socket.write(crlf);
+            socket.write(data);
+          } catch (error) {
+            console.log('a series of unfortunate get events');
+            console.log(error);
+          }
         }
-        break;
-      case "user-agent":
-        socket.write(textResponse(headers["User-Agent"]));
-        break;
-      case "echo":
-        const extraHeaders = [];
-        switch (headers["Accept-Encoding"]) {
-          case "gzip":
-            extraHeaders.push(["Content-Encoding", "gzip"]);
-            break;
+      }
+      if (method === 'POST') {
+        try {
+          fs.writeFileSync(filepath, requestBody, { flag: 'a' });
+          socket.write('HTTP/1.1 201 Created' + crlf);
+          socket.write(crlf);
+        } catch (error) {
+          console.log('a series of unfortunate post events');
+          console.log(error);
         }
-        socket.write(textResponse(segments[1], extraHeaders));
-        break;
-      default:
-        socket.write(httpResponse("404 Not Found"));
+      }
+    } else {
+      socket.write('HTTP/1.1 404 Not Found' + crlf + crlf);
     }
-  });
-  socket.on("close", () => {
     socket.end();
   });
+  socket.on('close', () => {
+    socket.end();
+    server.close();
+  });
 });
-server.listen(4221, "localhost");
-function textResponse(body, extraHeaders = []) {
-  const headers = [
-    ["Content-Type", "text/plain"],
-    ["Content-Length", body.length],
-    ...extraHeaders,
-  ];
-  return httpResponse("200 OK", headers, body);
-}
-function httpResponse(status, headers = [], body = "") {
-  const statusLine = `HTTP/1.1 ${status}\r\n`;
-  const headerLines = headers
-    .map(([key, value]) => `${key}:  ${value}\r\n`)
-    .join("");
-  return `${statusLine}${headerLines}\r\n${body}`;
-}
-function findFile(filename) {
-  const path = `${directory}/${filename}`;
-  return fs.existsSync(path) && fs.openSync(path);
-}
-function writeFile(filename, body) {
-  const path = `${directory}/${filename}`;
-  fs.writeFileSync(path, body);
-}
-function fileResponse(fd, extraHeaders = []) {
-  const body = fs.readFileSync(fd);
-  const headers = [
-    ["Content-Type", "application/octet-stream"],
-    ["Content-Length", body.length],
-    ...extraHeaders,
-  ];
-  return httpResponse("200 OK", headers, body);
-}
+server.listen(4221, 'localhost');
