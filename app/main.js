@@ -15,7 +15,7 @@ const parseRequest = (requestData) => {
   return { method, path, protocol, headers };
 };
 const OK_RESPONSE = "HTTP/1.1 200 OK\r\n\r\n";
-const ERROR_RESPONSE = "HTTP/1.1 404 Not found\r\n\r\n";
+const ERROR_RESPONSE = "HTTP/1.1 404 Not Found\r\n\r\n";
 const server = net.createServer((socket) => {
   socket.on("data", (data) => {
     const request = parseRequest(data);
