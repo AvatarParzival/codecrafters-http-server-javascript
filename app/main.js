@@ -77,9 +77,9 @@ const server = net.createServer((socket) => {
     }
     socket.end();
   });
-  // socket.on('close', () => {
-    // socket.end();
-    // server.close();
- // });
+  socket.on('close', () => {
+  socket.end();
+  server.close();
+ });
 });
 server.listen(4221, 'localhost');
