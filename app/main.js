@@ -12,6 +12,7 @@ const server = net.createServer((socket) => {
     server.close();
   });
   socket.on("data", (data) => {
+  socket.write("HTTP/1.1 200 OK\r\n\r\n");
     console.log(data);
     const path = data.toString().split(" ")[1];
     const responseStatus = path === '/' ? "200 ok" : "404 NOT Found";
