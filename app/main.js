@@ -7,103 +7,113 @@ const HTTP_NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n";
 const HTTP_CREATED = "HTTP/1.1 201 Created\r\n\r\n";
 
 const server = net.createServer((socket) => {
-  socket.on("data", (data) => {
-    handleData(socket, data);
-  });
-
-  socket.on("close", () => {
-    socket.end();
-  });
+  socket.on("data", (data) => handleRequest(socket, data));
+  socket.on("close", () => socket.end());
 });
 
 server.listen(4221, "localhost");
 
-function handleData(socket, data) {
-  const requestLineItems = parseRequestLine(data);
-  const currentPath = requestLineItems.path;
-  const currentMethod = requestLineItems.method;
+function handleRequest(socket, data) {
+  const { method, path } = parseRequestLine(data);
 
-  if (currentPath === "/") {
-    writeSocketMessage(socket, HTTP_OK);
-  } else if (currentPath.startsWith("/echo")) {
-    const bodyContent = currentPath.split("/")[2];
-    const contentLength = bodyContent.length.toString();
-    const encodingMethods = getEncodingMethods(data);
-
-    if (encodingMethods.includes("gzip")) {
-      const bodyEncoded = zlib.gzipSync(bodyContent);
-      const bodyEncodedLength = bodyEncoded.length;
-      const response = `HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: text/plain\r\nContent-Length: ${bodyEncodedLength}\r\n\r\n`;
-      socket.write(response);
-      socket.write(bodyEncoded);
-      socket.end();
-    } else {
-      const response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${contentLength}\r\n\r\n${bodyContent}`;
-      writeSocketMessage(socket, response);
-    }
-  } else if (currentPath.startsWith("/user-agent")) {
-    const headerContent = parseHeaders(data);
-    const userAgent = headerContent.userAgent;
-    const userAgentLength = userAgent.length.toString();
-    const response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgentLength}\r\n\r\n${userAgent}`;
-    writeSocketMessage(socket, response);
-  } else if (currentPath.startsWith("/files") && currentMethod === "GET") {
-    const fileName = currentPath.split("/")[2];
-    const fileDirectory = process.argv[3];
-    const file = `${fileDirectory}/${fileName}`;
-
-    if (fs.existsSync(file)) {
-      const content = fs.readFileSync(file);
-      const length = content.length;
-      const response = `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${length}\r\n\r\n`;
-      socket.write(response);
-      socket.write(content);
-      socket.end();
-    } else {
-      writeSocketMessage(socket, HTTP_NOT_FOUND);
-    }
-  } else if (currentPath.startsWith("/files") && currentMethod === "POST") {
-    const fileName = currentPath.split("/")[2];
-    const fileDirectory = process.argv[3];
-    const file = `${fileDirectory}/${fileName}`;
-    const content = getRequestBody(data);
-    fs.writeFileSync(file, content);
-    writeSocketMessage(socket, HTTP_CREATED);
-  } else {
-    writeSocketMessage(socket, HTTP_NOT_FOUND);
+  if (path === "/") {
+    return respond(socket, HTTP_OK);
   }
+
+  if (path.startsWith("/echo")) {
+    return handleEcho(socket, path, data);
+  }
+
+  if (path.startsWith("/user-agent")) {
+    const { userAgent } = parseHeaders(data);
+    const body = userAgent || "";
+    return respond(socket, buildResponse(200, "text/plain", body));
+  }
+
+  if (path.startsWith("/files")) {
+    const fileName = path.split("/")[2];
+    const filePath = `${process.argv[3]}/${fileName}`;
+
+    if (method === "GET") {
+      if (!fs.existsSync(filePath)) return respond(socket, HTTP_NOT_FOUND);
+      const fileData = fs.readFileSync(filePath);
+      return respond(socket, buildResponse(200, "application/octet-stream", fileData));
+    }
+
+    if (method === "POST") {
+      const body = getRequestBody(data);
+      fs.writeFileSync(filePath, body);
+      return respond(socket, HTTP_CREATED);
+    }
+  }
+
+  respond(socket, HTTP_NOT_FOUND);
+}
+
+function handleEcho(socket, path, data) {
+  const body = path.split("/")[2] || "";
+  const acceptsGzip = parseAcceptedEncodings(data).includes("gzip");
+
+  if (acceptsGzip) {
+    const compressed = zlib.gzipSync(body);
+    const headers = [
+      "HTTP/1.1 200 OK",
+      "Content-Type: text/plain",
+      "Content-Encoding: gzip",
+      `Content-Length: ${compressed.length}`,
+      "\r\n",
+    ].join("\r\n");
+
+    socket.write(headers);
+    socket.write(compressed);
+    return socket.end();
+  }
+
+  respond(socket, buildResponse(200, "text/plain", body));
 }
 
 function parseRequestLine(data) {
-  const request = data.toString();
-  const lines = request.split("\r\n");
-  const [method, path, version] = lines[0].split(" ");
+  const [method, path, version] = data.toString().split("\r\n")[0].split(" ");
   return { method, path, version };
 }
 
 function parseHeaders(data) {
-  const request = data.toString();
-  const lines = request.split("\r\n");
+  const lines = data.toString().split("\r\n");
   const userAgentLine = lines.find((line) => line.startsWith("User-Agent:"));
-  const userAgent = userAgentLine ? userAgentLine.split(": ")[1] : "";
-  return { userAgent };
+  return { userAgent: userAgentLine?.split(": ")[1]?.trim() || "" };
 }
 
-function getEncodingMethods(data) {
-  const request = data.toString();
-  const lines = request.split("\r\n");
+function parseAcceptedEncodings(data) {
+  const lines = data.toString().split("\r\n");
   const encodingLine = lines.find((line) => line.startsWith("Accept-Encoding:"));
-  if (!encodingLine) return [];
-  const encodings = encodingLine.split(": ")[1];
-  return encodings.split(",").map((e) => e.trim());
+  return encodingLine ? encodingLine.split(": ")[1].split(",").map(e => e.trim()) : [];
 }
 
 function getRequestBody(data) {
-  const request = data.toString();
-  return request.split("\r\n\r\n")[1] || "";
+  return data.toString().split("\r\n\r\n")[1] || "";
 }
 
-function writeSocketMessage(socket, message) {
+function buildResponse(status, contentType, body) {
+  const bodyBuffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  return [
+    `HTTP/1.1 ${status} ${statusText(status)}`,
+    `Content-Type: ${contentType}`,
+    `Content-Length: ${bodyBuffer.length}`,
+    "\r\n",
+    bodyBuffer,
+  ].join("\r\n");
+}
+
+function respond(socket, message) {
   socket.write(message);
   socket.end();
+}
+
+function statusText(code) {
+  switch (code) {
+    case 200: return "OK";
+    case 201: return "Created";
+    case 404: return "Not Found";
+    default: return "";
+  }
 }
