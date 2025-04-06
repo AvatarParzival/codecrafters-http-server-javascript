@@ -30,7 +30,7 @@ function handleData(socket, data) {
         if(encodingMethods.length > 0){
             const bodyEncoded = zlib.gzipSync(bodyContent);
             const bodyEncodedLength = bodyEncoded.length;
-            response = HTTP/1.1 200 OK\r\nContent-Encoding: ${encodingMethods}\r\nContent-Type: text/plain\r\nContent-Length: ${bodyEncodedLength}\r\n\r\n;
+            response = `HTTP/1.1 200 OK\r\nContent-Encoding: ${encodingMethods}\r\nContent-Type: text/plain\r\nContent-Length: ${bodyEncodedLength}\r\n\r\n`;
             socket.write(response);
             socket.write(bodyEncoded);
             socket.end();
