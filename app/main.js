@@ -1,94 +1,75 @@
-import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import java.io.*;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import http from 'http';
+import { parse } from 'url';
+import { promises as fs } from 'fs';
+import path from 'path';
 
-public class FileServer {
-    private static Path targetDirectory;
+let targetDirectory = process.cwd();
 
-    public static void main(String[] args) throws IOException {
-        // Parse command line arguments
-        parseArguments(args);
+// Parse command line arguments
+process.argv.forEach((arg, index) => {
+  if (arg === '--directory' && process.argv[index + 1]) {
+    targetDirectory = path.resolve(process.argv[index + 1]);
+  }
+});
 
-        // Create HTTP server
-        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 4221), 0);
-        
-        // Set up context handler for files endpoint
-        server.createContext("/files/", new FileHandler());
-        
-        // Start the server
-        server.start();
-        System.out.println("Server started on port 4221");
+const server = http.createServer(async (req, res) => {
+  const { method, url } = req;
+  const parsedUrl = parse(url, true);
+  const pathname = parsedUrl.pathname;
+
+  // Handle POST /files/{filename}
+  if (method === 'POST' && pathname.startsWith('/files/')) {
+    const filename = pathname.slice('/files/'.length);
+    
+    // Security check
+    if (filename.includes('..') || filename.includes('/')) {
+      res.writeHead(400);
+      res.end('Invalid filename');
+      return;
     }
 
-    private static void parseArguments(String[] args) {
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--directory") && i + 1 < args.length) {
-                targetDirectory = Paths.get(args[i + 1]).toAbsolutePath();
-                System.out.println("Using directory: " + targetDirectory);
-                return;
-            }
-        }
-        System.err.println("Missing required --directory argument");
-        System.exit(1);
+    // Check headers
+    const contentType = req.headers['content-type'];
+    const contentLength = req.headers['content-length'];
+
+    if (contentType !== 'application/octet-stream') {
+      res.writeHead(400);
+      res.end('Invalid Content-Type');
+      return;
     }
 
-    static class FileHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            try {
-                // Only handle POST requests
-                if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-                    sendResponse(exchange, 405, "Method Not Allowed");
-                    return;
-                }
-
-                // Get filename from URL
-                String path = exchange.getRequestURI().getPath();
-                String filename = path.substring("/files/".length());
-
-                // Validate filename
-                if (filename.contains("..")) {
-                    sendResponse(exchange, 400, "Invalid filename");
-                    return;
-                }
-
-                // Validate headers
-                String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-                String contentLength = exchange.getRequestHeaders().getFirst("Content-Length");
-
-                if (!"application/octet-stream".equalsIgnoreCase(contentType)) {
-                    sendResponse(exchange, 400, "Invalid Content-Type");
-                    return;
-                }
-
-                if (contentLength == null) {
-                    sendResponse(exchange, 411, "Content-Length Required");
-                    return;
-                }
-
-                // Read request body
-                byte[] body = exchange.getRequestBody().readAllBytes();
-
-                // Write file to disk
-                Path filePath = targetDirectory.resolve(filename);
-                Files.write(filePath, body, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-
-                sendResponse(exchange, 201, "Created");
-            } catch (Exception e) {
-                e.printStackTrace();
-                sendResponse(exchange, 500, "Internal Server Error");
-            }
-        }
-
-        private void sendResponse(HttpExchange exchange, int statusCode, String message) throws IOException {
-            exchange.sendResponseHeaders(statusCode, message.length());
-            OutputStream os = exchange.getResponseBody();
-            os.write(message.getBytes());
-            os.close();
-        }
+    if (!contentLength) {
+      res.writeHead(411);
+      res.end('Content-Length Required');
+      return;
     }
-}
+
+    try {
+      // Read request body
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = Buffer.concat(chunks);
+
+      // Write file
+      const filePath = path.join(targetDirectory, filename);
+      await fs.writeFile(filePath, body);
+
+      res.writeHead(201);
+      res.end('Created');
+    } catch (err) {
+      console.error(err);
+      res.writeHead(500);
+      res.end('Internal Server Error');
+    }
+  } else {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+});
+
+server.listen(4221, () => {
+  console.log(`Server running at http://localhost:4221`);
+  console.log(`Saving files to: ${targetDirectory}`);
+});
