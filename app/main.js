@@ -1,7 +1,7 @@
-import http from 'http';
-import { parse } from 'url';
-import { promises as fs } from 'fs';
-import path from 'path';
+const http = require('http');
+const { parse } = require('url');
+const fs = require('fs').promises;
+const path = require('path');
 
 let targetDirectory = process.cwd();
 
@@ -47,9 +47,8 @@ const server = http.createServer(async (req, res) => {
     try {
       // Read request body
       const chunks = [];
-      for await (const chunk of req) {
-        chunks.push(chunk);
-      }
+      req.on('data', (chunk) => chunks.push(chunk));
+      await new Promise((resolve) => req.on('end', resolve));
       const body = Buffer.concat(chunks);
 
       // Write file
