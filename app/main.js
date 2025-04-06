@@ -13,20 +13,26 @@ const server = net.createServer((socket) => {
     const statusLineOk = 'HTTP/1.1 200 OK' + crlf;
     if (targetPath === '/') {
       socket.write(statusLineOk + crlf);
-    } else if (targetPath.includes('/echo')) {
-      const contentBody = targetPath.split('/')[2];
-      socket.write(statusLineOk);
-      const splitted = requestHeader.split('\r\n');
-      const headerGzip = splitted.find((header) => {
-        return header.includes('gzip');
-      });
-      if (headerGzip) {
-        socket.write('Content-Encoding: gzip' + crlf);
-      }
-      socket.write('Content-Type: text/plain' + crlf);
-      socket.write(`Content-Length: ${contentBody.length}` + crlf);
-      socket.write(crlf);
-      socket.write(contentBody);
+} else if (targetPath.startsWith('/echo/')) {
+  try {
+    const contentBody = targetPath.substring(6); // safer than split
+    socket.write(statusLineOk);
+    const headerGzip = requestHeader
+      .split('\r\n')
+      .find((header) => header.toLowerCase().includes('gzip'));
+
+    if (headerGzip) {
+      socket.write('Content-Encoding: gzip' + crlf);
+    }
+
+    socket.write('Content-Type: text/plain' + crlf);
+    socket.write(`Content-Length: ${contentBody.length}` + crlf);
+    socket.write(crlf);
+    socket.write(contentBody);
+  } catch (e) {
+    console.log("Error in /echo route:", e);
+    socket.write('HTTP/1.1 500 Internal Server Error' + crlf + crlf);
+  }
     } else if (targetPath === '/user-agent') {
       const contentBody = userAgent.split(': ')[1];
       socket.write(statusLineOk);
