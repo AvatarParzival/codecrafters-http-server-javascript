@@ -1,114 +1,95 @@
-const fs = require("fs"); // fileSystem to handle file operations
+const fs = require("fs");
 const net = require("net");
-const zlib = require('zlib'); // library to compress gzip data
-const HTTP_OK = "HTTP/1.1 200 OK\r\n\r\n";
-const HTTP_NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n";
-const HTTP_CREATED = "HTTP/1.1 201 Created\r\n\r\n";
+const zlib = require("zlib");
+
+const STATUS = {
+  OK: "HTTP/1.1 200 OK",
+  NOT_FOUND: "HTTP/1.1 404 Not Found",
+  CREATED: "HTTP/1.1 201 Created",
+};
+
 const server = net.createServer((socket) => {
-    //writeHTTP_OK(socket);
-    socket.on("close", () => {
-     socket.end();
-     //server.close();
-   });
-    socket.on("data", (data) => {
-       handleData(socket, data);
-    });
- });
+  socket.on("data", (data) => handleRequest(socket, data));
+  socket.on("close", () => socket.end());
+});
+
 server.listen(4221, "localhost");
-function handleData(socket, data) {
-    const requestLineItems = parseRequestLine(socket, data);
-    const currentPath = requestLineItems['path'];
-    const currentMethod = requestLineItems['method'];
-    if(currentPath === '/'){
-        writeSocketMessage(socket, HTTP_OK);
-    }
-    else if(currentPath.startsWith('/echo')){
-        const bodyContent = currentPath.split('/')[2];
-        const content_length = bodyContent.length.toString();
-        let response = '';
-        const encodingMethods = getEncodingMethods(socket, data);
-        if(encodingMethods.length > 0){
-            const bodyEncoded = zlib.gzipSync(bodyContent);
-            const bodyEncodedLength = bodyEncoded.length;
-            response = `HTTP/1.1 200 OK\r\nContent-Encoding: ${encodingMethods}\r\nContent-Type: text/plain\r\nContent-Length: ${bodyEncodedLength}\r\n\r\n`;
-            socket.write(response);
-            socket.write(bodyEncoded);
-            socket.end();
-        }
-        else{
-            response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${content_length}\r\n\r\n${bodyContent}`;
-            writeSocketMessage(socket, response);
-        }
-    }
-    else if(currentPath.startsWith('/user-agent')){
-        //console.log(headerContent);
-        const headerContent = parseHeaders(socket, data);
-        const userAgent = headerContent['userAgent'];
-        const userAgent_length = userAgent.length.toString();
-        const response = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgent_length}\r\n\r\n${userAgent}`;
-        writeSocketMessage(socket,response);
-    }
-    else if(currentPath.startsWith('/files') && currentMethod === 'GET'){
-        const fileName = currentPath.split('/')[2];
-        const fileDirectory = process.argv[3];
-        const file = `${fileDirectory}/${fileName}`;
-        if(fs.existsSync(file)){
-            const content = fs.readFileSync(file).toString();
-            const length = content.length;
-            const response = `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${length}\r\n\r\n${content}\r\n`;
-            writeSocketMessage(socket, response);
-        }else {
-            writeSocketMessage(socket, HTTP_NOT_FOUND);
-        }
-    }
-    else if(currentPath.startsWith('/files') && currentMethod === 'POST'){
-        const fileName = currentPath.split('/')[2];
-        const fileDirectory = process.argv[3];
-        const file = `${fileDirectory}/${fileName}`;
-        const content = getRequestBody(socket, data);
-        fs.writeFileSync(file, content);
-        writeSocketMessage(socket, HTTP_CREATED);
-    }
-    else{
-        writeSocketMessage(socket, HTTP_NOT_FOUND);
-    }
+
+function handleRequest(socket, data) {
+  const [rawHeaders, body = ""] = data.toString().split("\r\n\r\n");
+  const [method, path] = rawHeaders.split(" ")[0, 1];
+  const headers = parseHeaders(rawHeaders);
+
+  if (path === "/") return respond(socket, STATUS.OK);
+  if (path.startsWith("/echo/")) return handleEcho(socket, path, headers);
+  if (path === "/user-agent") return handleUserAgent(socket, headers);
+  if (path.startsWith("/files")) return handleFile(socket, method, path, body);
+  return respond(socket, STATUS.NOT_FOUND);
 }
-function parseRequestLine(socket, data){
-    const request = data.toString();
-    const lines = request.split('\r\n');
-    const method = lines[0].split(" ")[0];
-    const path = lines[0].split(" ")[1];
-    const version = lines[0].split(" ")[2];
-    return {'method': method, 'path': path, 'version': version};
+
+function handleEcho(socket, path, headers) {
+  const message = path.substring(6);
+  const isGzip = headers["accept-encoding"]?.includes("gzip");
+  const encoded = isGzip ? zlib.gzipSync(message) : message;
+  const response =
+    `${STATUS.OK}\r\n` +
+    (isGzip ? "Content-Encoding: gzip\r\n" : "") +
+    `Content-Type: text/plain\r\n` +
+    `Content-Length: ${encoded.length}\r\n\r\n`;
+
+  socket.write(response);
+  socket.write(encoded);
+  socket.end();
 }
-function parseHeaders(socket, data){
-    const request = data.toString();
-    const lines = request.split('\r\n');
-    //console.log(lines);
-    const host = lines[1].split(" ")[1];
-    const userAgent = (lines[2].split(" ")[1]).trim();
-    //console.log(userAgent);
-    return {'host': host, 'userAgent': userAgent};
+
+function handleUserAgent(socket, headers) {
+  const ua = headers["user-agent"] || "";
+  const response =
+    `${STATUS.OK}\r\n` +
+    `Content-Type: text/plain\r\n` +
+    `Content-Length: ${ua.length}\r\n\r\n` +
+    ua;
+
+  respond(socket, response);
 }
-function getEncodingMethods(socket, data){
-    const request = data.toString();
-    const lines = request.split('\r\n');
-    const lineOfEncode = lines.find((line) => line.startsWith("Accept-Encoding"));
-    let encodingsPart = '';
-    if(lineOfEncode !== undefined)
-        encodingsPart = (lineOfEncode.split(": ")[1]).trim();
-    else
-        return [];
-    const encodingMethods = encodingsPart.split(", ");
-    return encodingMethods.filter((encodeMethod) => encodeMethod === 'gzip');
+
+function handleFile(socket, method, path, body) {
+  const filename = path.split("/")[2];
+  const dir = process.argv[3];
+  const filePath = `${dir}/${filename}`;
+
+  if (method === "GET") {
+    if (!fs.existsSync(filePath)) return respond(socket, STATUS.NOT_FOUND);
+    const content = fs.readFileSync(filePath);
+    const response =
+      `${STATUS.OK}\r\n` +
+      `Content-Type: application/octet-stream\r\n` +
+      `Content-Length: ${content.length}\r\n\r\n`;
+
+    socket.write(response);
+    socket.write(content);
+    return socket.end();
+  }
+
+  if (method === "POST") {
+    fs.writeFileSync(filePath, body);
+    return respond(socket, STATUS.CREATED);
+  }
+
+  return respond(socket, STATUS.NOT_FOUND);
 }
-function getRequestBody(socket, data){
-    const request = data.toString();
-    const lines = request.split('\r\n');
-    const body = lines[lines.length - 1];
-    return body;
+
+function respond(socket, message) {
+  socket.write(message);
+  socket.end();
 }
-function writeSocketMessage (socket, message){
-    socket.write(message);
-    socket.end();
+
+function parseHeaders(headerStr) {
+  const lines = headerStr.split("\r\n").slice(1);
+  const headers = {};
+  lines.forEach((line) => {
+    const [key, value] = line.split(": ");
+    if (key && value) headers[key.toLowerCase()] = value.trim();
+  });
+  return headers;
 }
