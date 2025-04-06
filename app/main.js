@@ -94,3 +94,4 @@ function getRequestBody(data) {
 function writeSocketMessage(socket, message) {
   socket.write(message);
   socket.end();
+}
