@@ -41,7 +41,7 @@ const server = net.createServer((socket) => {
       if (isExist) {
         const content = fs.readFileSync(filePath, "utf-8");
         socket.write(
-          `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${content.length}\r\n\n${content}`
+          `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${content.length}\r\n\r\n${content}`
         );
       } else {
         socket.write(ERROR_RESPONSE);
