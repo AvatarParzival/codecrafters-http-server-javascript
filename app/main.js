@@ -3,9 +3,9 @@ const net = require("net");
 const zlib = require("zlib");
 
 const CRLF = "\r\n";
-const HTTP_OK = `HTTP/1.1 200 OK${CRLF}`;
-const HTTP_NOT_FOUND = `HTTP/1.1 404 Not Found${CRLF}${CRLF}`;
-const HTTP_CREATED = `HTTP/1.1 201 Created${CRLF}${CRLF}`;
+const HTTP_OK = "HTTP/1.1 200 OK" + CRLF;
+const HTTP_NOT_FOUND = "HTTP/1.1 404 Not Found" + CRLF + CRLF;
+const HTTP_CREATED = "HTTP/1.1 201 Created" + CRLF + CRLF;
 const PORT = 4221;
 const HOST = "localhost";
 
@@ -34,36 +34,35 @@ function handleRequest(socket, data) {
     if (isGzip) {
       const compressed = zlib.gzipSync(message);
       const responseHeaders = [
-        HTTP_OK.trim(),
-        `Content-Encoding: gzip`,
-        `Content-Type: text/plain`,
+        HTTP_OK,
+        "Content-Encoding: gzip",
+        "Content-Type: text/plain",
         `Content-Length: ${compressed.length}`,
-        "",
-        ""
+        "", // Empty line between headers and body
       ].join(CRLF);
       socket.write(responseHeaders);
       socket.write(compressed);
+      return socket.end();
     } else {
       const response = [
-  `HTTP/1.1 200 OK`,
-  `Content-Type: text/plain`,
-  `Content-Length: ${message.length}`,
-  "",
-  message
-].join(CRLF);
+        HTTP_OK,
+        "Content-Type: text/plain",
+        `Content-Length: ${message.length}`,
+        "", // Empty line between headers and body
+        message,
+      ].join(CRLF);
 
-      respond(socket, response);
+      return respond(socket, response);
     }
-    return;
   }
 
   if (path === "/user-agent") {
     const response = [
-      HTTP_OK.trim(),
-      `Content-Type: text/plain`,
+      HTTP_OK,
+      "Content-Type: text/plain",
       `Content-Length: ${userAgent.length}`,
-      "",
-      userAgent
+      "", // Empty line between headers and body
+      userAgent,
     ].join(CRLF);
     return respond(socket, response);
   }
@@ -76,11 +75,10 @@ function handleRequest(socket, data) {
       if (!fs.existsSync(filePath)) return respond(socket, HTTP_NOT_FOUND);
       const content = fs.readFileSync(filePath);
       const response = [
-        HTTP_OK.trim(),
-        `Content-Type: application/octet-stream`,
+        HTTP_OK,
+        "Content-Type: application/octet-stream",
         `Content-Length: ${content.length}`,
-        "",
-        ""
+        "", // Empty line between headers and body
       ].join(CRLF);
       socket.write(response);
       socket.write(content);
