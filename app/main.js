@@ -45,12 +45,13 @@ function handleRequest(socket, data) {
       socket.write(compressed);
     } else {
       const response = [
-        HTTP_OK.trim(),
-        `Content-Type: text/plain`,
-        `Content-Length: ${message.length}`,
-        "",
-        message
-      ].join(CRLF);
+  `HTTP/1.1 200 OK`,
+  `Content-Type: text/plain`,
+  `Content-Length: ${message.length}`,
+  "",
+  message
+].join(CRLF);
+
       respond(socket, response);
     }
     return;
